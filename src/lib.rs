@@ -71,6 +71,8 @@
 //!   - Fetch Asset Data - [`Client::fetch_asset_data`]
 //! * IDE API (Animations)
 //!   - Upload New Animation - [`Client::upload_new_animation`]
+//!   - Get User Games - [`Client::user_games`]
+//!   - Get Group Games - [`Client::group_games`]
 //! * UNDER CONSTRUCTION
 //!   - Upload Classic Clothing To Group - [`Client::upload_classic_clothing_to_group`]
 //!
