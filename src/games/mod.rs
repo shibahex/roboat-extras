@@ -173,7 +173,10 @@ mod internal {
             user_id: u64,
         ) -> Result<GamesResponseV2, RoboatError> {
             // Max limit is 50
-            let formatted_url = format!("{}/users/{}/games?limit=50", GAMES_V2_API, user_id);
+            let formatted_url = format!(
+                "{}/users/{}/games?limit=50&accessFilter=Public",
+                GAMES_V2_API, user_id
+            );
             let request_result = self.reqwest_client.get(formatted_url).send().await;
 
             let response = Self::validate_request_result(request_result).await?;
@@ -185,7 +188,10 @@ mod internal {
             &self,
             group_id: u64,
         ) -> Result<GamesResponseV2, RoboatError> {
-            let formatted_url = format!("{}/groups/{}/gamesv2?limit=100", GAMES_V2_API, group_id);
+            let formatted_url = format!(
+                "{}/groups/{}/gamesv2?limit=100&accessFilter=Public",
+                GAMES_V2_API, group_id
+            );
             let request_result = self.reqwest_client.get(formatted_url).send().await;
 
             let response = Self::validate_request_result(request_result).await?;
