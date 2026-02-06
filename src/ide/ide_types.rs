@@ -11,5 +11,4 @@ pub struct NewStudioAsset {
     pub asset_type: AssetType,
     pub asset_data: Bytes,
     pub group_id: Option<u64>,
-    pub place_id: Option<u64>,
 }
