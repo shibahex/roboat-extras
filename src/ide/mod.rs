@@ -65,16 +65,13 @@ impl Client {
     /// ```
     pub async fn upload_studio_asset(
         &self,
-        animation_info: NewStudioAsset,
+        asset_info: NewStudioAsset,
     ) -> Result<String, RoboatError> {
-        match self
-            .upload_studio_asset_internal(animation_info.clone())
-            .await
-        {
+        match self.upload_studio_asset_internal(asset_info.clone()).await {
             Ok(x) => Ok(x),
             Err(RoboatError::InvalidXcsrf(new_xcsrf)) => {
                 self.set_xcsrf(new_xcsrf).await;
-                self.upload_studio_asset_internal(animation_info).await
+                self.upload_studio_asset_internal(asset_info).await
             }
             Err(e) => Err(e),
         }
