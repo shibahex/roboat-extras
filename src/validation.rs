@@ -170,13 +170,20 @@ impl Client {
     pub(crate) async fn parse_to_raw<T: DeserializeOwned>(
         response: Response,
     ) -> Result<T, RoboatError> {
-        let response_struct = match response.json::<T>().await {
+        // Get text first, then parse as JSON
+        let text = response
+            .text()
+            .await
+            .map_err(|_| RoboatError::MalformedResponse)?;
+
+        let response_struct = match serde_json::from_str::<T>(&text) {
             Ok(x) => x,
-            Err(_) => {
+            Err(err) => {
+                println!("Failed to parse JSON: {}", err);
+                println!("Response body: {}", text);
                 return Err(RoboatError::MalformedResponse);
             }
         };
-
         Ok(response_struct)
     }
 }
