@@ -86,6 +86,9 @@ Documentation can be found [here](https://docs.rs/roboat/).
     - Fetch Asset Data - [`Client::fetch_asset_data`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_asset_data)
 * IDE API (Animations) - [`ide.roblox.com/*`]
     - Upload New Animation - [`Client::upload_new_animation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_new_animation)
+* Games API - [`games.roblox.com/*`]
+    - Get User Games - [`Client::user_games`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.user_games)
+    - Get Group Games - [`Client::group_games`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.group_games)
 * UNDER CONSTRUCTION
     - Upload Classic Clothing to Group - [`Client::upload_classic_clothing_to_group`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_classic_clothing_to_group)
 
