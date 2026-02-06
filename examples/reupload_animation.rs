@@ -1,5 +1,5 @@
 use clap::Parser;
-use roboat::{ide::ide_types::NewAnimation, ClientBuilder};
+use roboat::{ide::ide_types::NewStudioAsset, ClientBuilder};
 
 /// This example is made for programs that would restore old roblox games
 /// Whenever you download a .rblx file and it has animations none of them will work.
@@ -25,14 +25,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let asset_id = args.asset_id;
     let existing_animation = client.fetch_asset_data(asset_id).await?;
 
-    let animation = NewAnimation {
+    let asset_info = client.get_asset_info(asset_id).await?;
+
+    println!("{:?}", asset_info);
+
+    let animation = NewStudioAsset {
         group_id: None,
+        place_id: Some(64),
         name: "roboatTest".to_string(),
         description: "This is a roboat example".to_string(),
-        animation_data: existing_animation,
+        asset_type: roboat::catalog::AssetType::Animation,
+        asset_data: existing_animation,
     };
 
-    client.upload_new_animation(animation).await?;
+    client.upload_studio_asset(animation).await?;
 
     println!("Uploaded Animation!");
     Ok(())
