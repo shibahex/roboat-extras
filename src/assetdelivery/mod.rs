@@ -87,6 +87,10 @@ impl Client {
     ///
     /// # Notes
     /// Requires valid roblosecurity
+    ///
+    /// Add [`Roblox-Place-Id`] in the request headers if the asset is not owned by your account.
+    /// The place-id can be any place the owner of the asset has
+    ///
     /// *Can return a sucess but still have error codes in the response
     /// Doesn't need xcrf, but will add one if it gets 401
     pub async fn fetch_asset_metadata(
@@ -117,6 +121,10 @@ impl Client {
     ///
     /// # Notes
     /// Needs Roblox Cookie but not CSRF
+    ///
+    /// Add [`Roblox-Place-Id`] in the request headers if the asset is not owned by your account.
+    /// The place-id can be any place the owner of the asset has
+    ///
     /// Can return a sucess but still have error codes in the response
     ///     
     /// # Returns
@@ -215,7 +223,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-
     // WARNING: Theres a V2 API https://assetdelivery.roblox.com/v2/assetid/119472671657225 that
     // has location of the file. Migrate to it if they ever ratelimit/remove the v1 API
     /// If this API hangs, use a timeout and retry.
@@ -272,9 +279,8 @@ mod internal {
             // CSRF on this API)
             for batch_resp in &mut meta_data {
                 if let Some(id) = batch_resp.asset_type_id {
-                    match catalog_types::AssetType::try_from(id as u64) {
-                        Ok(e) => batch_resp.asset_type = Some(e),
-                        Err(..) => {}
+                    if let Ok(e) = catalog_types::AssetType::try_from(id as u64) {
+                        batch_resp.asset_type = Some(e);
                     }
                 }
                 if let Some(roblox_error_raw) = &batch_resp.errors {
