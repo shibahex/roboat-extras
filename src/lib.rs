@@ -39,6 +39,7 @@
 //!   - Set Group Member Role - [`Client::set_group_member_role`]
 //! * Presence API
 //!   - Register Presence - [`Client::register_presence`]
+//!   - Fetch Users Presence - [`Client::fetch_users_presence`]
 //! * Private Messages API
 //!   - Fetch Messages - [`Client::messages`]
 //! * Thumbnails API
@@ -56,7 +57,7 @@
 //!   - Fetch Username - [`Client::username`]
 //!   - Fetch Display Name - [`Client::display_name`]
 //!   - User Search - [`Client::user_search`]
-//!   - Username User Search - [`Client::username_user_search`]
+//!   - Username User Details - [`Client::username_user_details`]
 //!   - Fetch User Details - [`Client::user_details`]
 //! * Friends API
 //!   - Fetch Count of Pending Friend Requests - [`Client::pending_friend_requests`]
@@ -70,6 +71,8 @@
 //!   - Fetch Asset Data - [`Client::fetch_asset_data`]
 //! * IDE API (Animations)
 //!   - Upload New Animation - [`Client::upload_new_animation`]
+//!   - Get User Games - [`Client::user_games`]
+//!   - Get Group Games - [`Client::group_games`]
 //! * UNDER CONSTRUCTION
 //!   - Upload Classic Clothing To Group - [`Client::upload_classic_clothing_to_group`]
 //!
