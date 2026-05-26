@@ -249,12 +249,15 @@ pub mod ide;
 pub mod presence;
 /// A module for endpoints prefixed with <https://privatemessages.roblox.com/*>.
 pub mod private_messages;
+/// A module for endpoints prefixed with <https:://publish.roblox.com/*>.
+pub mod publish;
 /// A module for endpoints prefixed with <https://thumbnails.roblox.com/*>.
 pub mod thumbnails;
 /// A module for endpoints prefixed with <https://trades.roblox.com/*>.
 pub mod trades;
 /// A module for endpoints prefixed with <https://users.roblox.com/*>.
 pub mod users;
+///
 /// A module related to validating requests.
 mod validation;
 // todo: figure out authtickets
