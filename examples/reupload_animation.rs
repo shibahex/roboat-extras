@@ -8,9 +8,11 @@ use roboat::{ide::ide_types::NewAnimation, ClientBuilder};
 ///
 #[derive(Parser, Debug)]
 struct Args {
+    #[arg(long)]
+    api_key: String,
     #[arg(long, short)]
     roblosecurity: String,
-    #[arg(long, short)]
+    #[arg(long)]
     asset_id: u64,
 }
 
@@ -25,14 +27,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let asset_id = args.asset_id;
     let existing_animation = client.fetch_asset_data(asset_id).await?;
 
-    let animation = NewAnimation {
-        group_id: None,
-        name: "roboatTest".to_string(),
-        description: "This is a roboat example".to_string(),
-        animation_data: existing_animation,
-    };
-
-    client.upload_new_animation(animation).await?;
+    // let animation = NewAnimation {
+    //     group_id: None,
+    //     name: "roboatTest".to_string(),
+    //     description: "This is a roboat example".to_string(),
+    //     animation_data: existing_animation,
+    // };
+    //
+    // client.upload_new_animation(animation).await?;
+    client
+        .upload_animationv2(
+            args.api_key,
+            None,
+            "roboatTe".to_string(),
+            "example".to_string(),
+            &existing_animation,
+        )
+        .await?;
 
     println!("Uploaded Animation!");
     Ok(())
