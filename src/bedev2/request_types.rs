@@ -40,6 +40,36 @@ pub struct UploadClassicClothingRaw {
     done: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadAssetRaw {
+    pub path: String,
+    pub done: bool,
+    pub error: Option<OperationError>,
+    pub response: Option<OperationResponse>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationResponse {
+    pub path: Option<String>,
+    pub asset_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationError {
+    pub code: u64,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationAsset {
+    pub asset_id: u64,
+    pub display_name: String,
+    pub description: String,
+}
 /// For asset information
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

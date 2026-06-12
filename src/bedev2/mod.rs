@@ -159,7 +159,7 @@ impl Client {
     /// # Notes
     /// * Requires a valid roblosecurity.
     /// * The amount of items that can be requested at once is unknown as not enough non-tradable limiteds exist, and the
-    /// endpoint doesn't accept duplicates.
+    ///   endpoint doesn't accept duplicates.
     /// * Will repeat once if the x-csrf-token is invalid.
     ///
     /// # Errors
@@ -273,7 +273,7 @@ impl Client {
     /// # Notes
     /// * Requires a valid roblosecurity.
     /// * The amount of items that can be requested at once is unknown as not enough non-tradable limiteds exist, and the
-    /// endpoint doesn't accept duplicates.
+    ///   endpoint doesn't accept duplicates.
     /// * Will repeat once if the x-csrf-token is invalid.
     ///
     /// # Errors
@@ -389,20 +389,20 @@ impl Client {
     /// * Requires a valid roblosecurity.
     /// * Will repeat once if the x-csrf-token is invalid.
     /// * Currently only tested to work when buying from users (as opposed to groups), and only tested
-    /// when buying the items from the original seller (with original stock). This is because
-    /// these are the only conditions that currently exist as of 4/14/2023.
+    ///   when buying the items from the original seller (with original stock). This is because
+    ///   these are the only conditions that currently exist as of 4/14/2023.
     ///
     /// # Return Value Notes
     /// * Will return `Ok(())` if the limited was successfully purchased.
     ///
     /// # Argument Notes
     /// * `collectible_item_id` is the string id of a non-tradable limited. It can be
-    /// fetched using [`Client::collectible_item_id`].
+    ///   fetched using [`Client::collectible_item_id`].
     /// * `collectible_product_id` is the string product id of a non-tradable limited. It can be
-    /// fetched using [`Client::collectible_product_id`].
+    ///   fetched using [`Client::collectible_product_id`].
     /// * `collectible_seller_id` is the user id of the seller of a non-tradable limited. It can be
-    /// fetched using [`Client::collectible_creator_id`] (currently it is unknown how to buy from a reseller
-    /// instead of the original creator as they do not exist yet).
+    ///   fetched using [`Client::collectible_creator_id`] (currently it is unknown how to buy from a reseller
+    ///   instead of the original creator as they do not exist yet).
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
@@ -478,9 +478,7 @@ impl Client {
     /// # Notes
     /// * requires .ROBLOSECURITY cookie
     /// * Will repeat once if the x-csrf-token is invalid.
-
     /// # Errors
-    ///
     /// * All errors under [Standard Errors](#standard-errors).
     /// * All errors under [Auth Required Errors](#auth-required-errors).
     /// * All errors under [X-CSRF-TOKEN Required Errors](#x-csrf-token-required-errors).
@@ -506,7 +504,7 @@ impl Client {
     /// # }
     /// ```
     pub async fn get_asset_info(&self, asset_id: u64) -> Result<AssetInfo, RoboatError> {
-        match self.get_asset_info_internal(asset_id.clone()).await {
+        match self.get_asset_info_internal(asset_id).await {
             Ok(x) => Ok(x),
             Err(e) => match e {
                 RoboatError::InvalidXcsrf(new_xcsrf) => {
@@ -516,6 +514,47 @@ impl Client {
                 _ => Err(e),
             },
         }
+    }
+
+    /// Polls an Open Cloud asset upload operation.
+    ///
+    /// Upload endpoints return an operation path rather than the final asset.
+    /// Call this method repeatedly until `done == true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `api_key` - Open Cloud API key.
+    /// * `path` - Operation path returned from an upload request.
+    ///
+    /// # Errors
+    ///
+    /// * All standard request and response parsing errors.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// loop {
+    ///     let operation = client
+    ///         .poll_upload_operation(
+    ///             api_key.clone(),
+    ///             upload.path.clone(),
+    ///         )
+    ///         .await?;
+    ///
+    ///     if operation.done {
+    ///         println!("Upload completed!");
+    ///         break;
+    ///     }
+    ///
+    ///     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    /// }
+    /// ```
+    pub async fn poll_upload_operation(
+        &self,
+        api_key: String,
+        path: String,
+    ) -> Result<request_types::UploadAssetRaw, RoboatError> {
+        self.poll_upload_operation_internal(api_key, path).await
     }
 
     /// Uploads an animation asset using the Open Cloud API endpoint
@@ -573,7 +612,7 @@ impl Client {
         name: String,
         description: String,
         animation_data: &Bytes,
-    ) -> Result<(), RoboatError> {
+    ) -> Result<request_types::UploadAssetRaw, RoboatError> {
         match self
             .cloud_upload_asset_internal(
                 api_key.clone(),
@@ -791,6 +830,25 @@ mod internal {
             Ok(asset_info)
         }
 
+        pub(super) async fn poll_upload_operation_internal(
+            &self,
+            api_key: String,
+            path: String,
+        ) -> Result<request_types::UploadAssetRaw, RoboatError> {
+            let url = format!("https://apis.roblox.com/assets/v1/{}", path);
+
+            let response_result = self
+                .reqwest_client
+                .get(url)
+                .header("x-api-key", api_key)
+                .send()
+                .await;
+
+            let response = Self::validate_request_result(response_result).await?;
+            let raw = Self::parse_to_raw::<request_types::UploadAssetRaw>(response).await?;
+            Ok(raw)
+        }
+
         pub(super) async fn cloud_upload_asset_internal(
             &self,
             api_key: String,
@@ -799,7 +857,7 @@ mod internal {
             description: String,
             asset_type: catalog::AssetType,
             asset_data: &Bytes,
-        ) -> Result<(), RoboatError> {
+        ) -> Result<request_types::UploadAssetRaw, RoboatError> {
             let creator_json = match group_id {
                 Some(id) => format!("\"groupId\":\"{id}\""),
                 None => {
@@ -834,8 +892,8 @@ mod internal {
                 .await;
 
             let response = Self::validate_request_result(response_result).await?;
-            let _ = Self::parse_to_raw::<request_types::UploadClassicClothingRaw>(response).await?;
-            Ok(())
+            let raw = Self::parse_to_raw::<request_types::UploadAssetRaw>(response).await?;
+            Ok(raw)
         }
 
         pub(super) async fn upload_classic_clothing_to_group_internal(
