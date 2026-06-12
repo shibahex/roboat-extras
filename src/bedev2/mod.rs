@@ -1,8 +1,8 @@
 use crate::bedev2::request_types::AssetInfo;
-use crate::catalog::CreatorType;
+use crate::catalog::{AssetType, CreatorType};
 use crate::{Client, RoboatError};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-
 mod request_types;
 
 const COLLECTIBLE_ITEM_DETAILS_API: &str =
@@ -15,6 +15,10 @@ const PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1: &str =
 /// - POST request with a payload to upload an asset
 /// - GET request with an asset ID parameter (/{Id}) to retrieve asset information
 const ASSET_API: &str = "https://apis.roblox.com/assets/user-auth/v1/assets";
+
+/// Open Cloud asset upload endpoint. Requires an API key via `x-api-key` header.
+/// Supports Animation (.rbxm/.rbxmx) and Audio uploads, unlike the user-auth endpoint.
+const OPEN_CLOUD_ASSET_API: &str = "https://apis.roblox.com/assets/v1/assets";
 
 const PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2: &str = "/purchase-item";
 
@@ -514,6 +518,93 @@ impl Client {
         }
     }
 
+    /// Uploads an animation asset using the Open Cloud API endpoint
+    /// <https://apis.roblox.com/assets/v1/assets>.
+    ///
+    /// Unlike the user-auth endpoint, the Open Cloud endpoint supports Animation (.rbxm/.rbxmx)
+    /// uploads and requires an API key instead of a roblosecurity cookie.
+    ///
+    ///
+    /// # Notes
+    /// * Requires a valid API key passed via `api_key`.
+    /// * Optionally uploads under a group if `group_id` is provided; otherwise uploads under the authenticated user.
+    /// * Will repeat once if the x-csrf-token is invalid.
+    /// * `animation_data` must be the raw bytes of a valid `.rbxm` or `.rbxmx` animation file.
+    ///
+    /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * All errors under [Auth Required Errors](#auth-required-errors).
+    /// * All errors under [X-CSRF-TOKEN Required Errors](#x-csrf-token-required-errors).
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use roboat::ClientBuilder;
+    /// use bytes::Bytes;
+    ///
+    /// const ROBLOSECURITY: &str = "roblosecurity";
+    /// const API_KEY: &str = "your_api_key";
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new()
+    ///     .roblosecurity(ROBLOSECURITY.to_string())
+    ///     .build();
+    ///
+    /// let animation_data = Bytes::from(std::fs::read("animation.rbxm")?);
+    ///
+    /// client.upload_animation(
+    ///     API_KEY.to_string(),
+    ///     Some(123456789), // group_id, or None to upload as user
+    ///     "My Animation".to_string(),
+    ///     "An example animation.".to_string(),
+    ///     &animation_data,
+    /// ).await?;
+    ///
+    /// println!("Successfully uploaded animation!");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn upload_animation(
+        &self,
+        api_key: String,
+        group_id: Option<u64>,
+        name: String,
+        description: String,
+        animation_data: &Bytes,
+    ) -> Result<(), RoboatError> {
+        match self
+            .cloud_upload_asset_internal(
+                api_key.clone(),
+                group_id,
+                name.clone(),
+                description.clone(),
+                AssetType::Animation,
+                animation_data,
+            )
+            .await
+        {
+            Ok(x) => Ok(x),
+            Err(e) => match e {
+                RoboatError::InvalidXcsrf(new_xcsrf) => {
+                    self.set_xcsrf(new_xcsrf).await;
+
+                    self.cloud_upload_asset_internal(
+                        api_key.clone(),
+                        group_id,
+                        name.clone(),
+                        description.clone(),
+                        AssetType::Animation,
+                        animation_data,
+                    )
+                    .await
+                }
+                _ => Err(e),
+            },
+        }
+    }
+
     /// Uploads classic clothing to a group. This currently only works for classic clothing and
     /// for people uploading from groups. This is because the endpoint is not fully understood yet
     /// and reverse engineering it is expensive.
@@ -567,16 +658,18 @@ impl Client {
 mod internal {
     use std::path::Path;
 
+    use bytes::Bytes;
     use reqwest::header;
 
     use super::{
         request_types, sort_items_by_argument_order, ClassicClothingType,
         NonTradableLimitedDetails, PurchaseNonTradableLimitedError, COLLECTIBLE_ITEM_DETAILS_API,
-        PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1, PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2,
+        OPEN_CLOUD_ASSET_API, PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1,
+        PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2,
     };
     use crate::{
         bedev2::{request_types::AssetInfo, ASSET_API},
-        Client, RoboatError, XCSRF_HEADER,
+        catalog, Client, RoboatError, XCSRF_HEADER,
     };
 
     impl Client {
@@ -696,6 +789,53 @@ mod internal {
             let asset_info = Self::parse_to_raw::<request_types::AssetInfo>(response).await?;
 
             Ok(asset_info)
+        }
+
+        pub(super) async fn cloud_upload_asset_internal(
+            &self,
+            api_key: String,
+            group_id: Option<u64>,
+            name: String,
+            description: String,
+            asset_type: catalog::AssetType,
+            asset_data: &Bytes,
+        ) -> Result<(), RoboatError> {
+            let creator_json = match group_id {
+                Some(id) => format!("\"groupId\":\"{id}\""),
+                None => {
+                    let user_id = self.user_id().await?;
+                    format!("\"userId\":\"{user_id}\"")
+                }
+            };
+
+            let form = reqwest::multipart::Form::new()
+                .part(
+                    "fileContent",
+                    reqwest::multipart::Part::bytes(asset_data.to_vec())
+                        .file_name("asset.rbxm")
+                        .mime_str("model/x-rbxm")
+                        .map_err(|e| RoboatError::MalformedResponse)?,
+                )
+                .text(
+                    "request",
+                    format!(
+                        "{{\"displayName\":\"{name}\",\"description\":\"{description}\",\
+                         \"assetType\":\"{asset_type}\",\"creationContext\":{{\"creator\":{{{creator_json}}},\
+                         \"expectedPrice\":0}}}}"
+                    ),
+                );
+
+            let response_result = self
+                .reqwest_client
+                .post(OPEN_CLOUD_ASSET_API)
+                .header("x-api-key", api_key)
+                .multipart(form)
+                .send()
+                .await;
+
+            let response = Self::validate_request_result(response_result).await?;
+            let _ = Self::parse_to_raw::<request_types::UploadClassicClothingRaw>(response).await?;
+            Ok(())
         }
 
         pub(super) async fn upload_classic_clothing_to_group_internal(
