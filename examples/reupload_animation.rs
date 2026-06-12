@@ -1,5 +1,5 @@
 use clap::Parser;
-use roboat::{ide::ide_types::NewAnimation, ClientBuilder};
+use roboat::ClientBuilder;
 
 /// This example is made for programs that would restore old roblox games
 /// Whenever you download a .rblx file and it has animations none of them will work.
@@ -35,9 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // };
     //
     // client.upload_new_animation(animation).await?;
-    client
-        .upload_animationv2(
-            args.api_key,
+    let response = client
+        .upload_animation(
+            args.api_key.clone(),
             None,
             "roboatTe".to_string(),
             "example".to_string(),
@@ -46,5 +46,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("Uploaded Animation!");
+    println!("Response: {:?}", response);
+
+    loop {
+        let operation = client
+            .poll_upload_operation(args.api_key.clone(), response.path.clone())
+            .await?;
+
+        if operation.done {
+            println!("{:#?}", operation);
+
+            if let Some(resp) = operation.response {
+                println!("{:#?}", resp);
+
+                // Depending on how Roblox returns it
+                println!("New Asset ID: {:?}", resp);
+            }
+
+            break;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
     Ok(())
 }
