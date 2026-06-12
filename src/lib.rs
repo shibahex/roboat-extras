@@ -248,9 +248,6 @@ pub mod groups;
 /// A module for endpoints prefixed with <https://games.roblox.com/*>
 pub mod games;
 
-/// A module for endpoints prefixed with <https://www.roblox.com/ide/*>
-// This is used for private APIs like ide/uploadnewanimation and ide/places/createV2
-pub mod ide;
 /// A module for endpoints prefixed with <https://presence.roblox.com/*>.
 pub mod presence;
 /// A module for endpoints prefixed with <https://privatemessages.roblox.com/*>.
