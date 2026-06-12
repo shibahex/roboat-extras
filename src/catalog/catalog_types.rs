@@ -90,6 +90,13 @@ pub enum AssetType {
     DynamicHead,
 }
 
+impl std::fmt::Display for AssetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let json = serde_json::to_string(self).map_err(|_| std::fmt::Error)?;
+        write!(f, "{}", json.trim_matches('"'))
+    }
+}
+
 /// An enum representing the type of bundle (BodyParts or AvatarAnimations).
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, Copy,
