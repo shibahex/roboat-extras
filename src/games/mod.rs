@@ -57,7 +57,8 @@ impl Client {
     /// * Use pagination cursors in the response to fetch additional pages of results.
     ///
     /// # Parameters
-    /// * `user_id` – The numeric user ID to retrieve games for
+    /// * `user_id`: The numeric user ID to retrieve games for
+    /// * `public_only`: An optional bool that determines the place status
     ///
     /// # Return Value Notes
     /// * Returns `GamesResponseV2` containing the paginated list of games if successful.
@@ -65,9 +66,9 @@ impl Client {
     /// * Each game contains detailed information including creator, root place, visit counts, and timestamps.
     ///
     /// # Errors
-    /// * [RoboatError::ReqwestError] – For any network issues.
-    /// * [RoboatError::ResponseError] – If Roblox returns a failure response.
-    /// * [RoboatError::MalformedResponse] – If the JSON response cannot be parsed.
+    /// * [RoboatError::ReqwestError] For any network issues.
+    /// * [RoboatError::ResponseError] If Roblox returns a failure response.
+    /// * [RoboatError::MalformedResponse] If the JSON response cannot be parsed.
     ///
     /// # Example
     /// ```no_run
@@ -95,8 +96,13 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn user_games(&self, user_id: u64) -> Result<GamesResponseV2, RoboatError> {
-        match self.user_games_internal(user_id).await {
+    pub async fn user_games(
+        &self,
+        user_id: u64,
+        public_only: Option<bool>,
+        cursor: Option<String>,
+    ) -> Result<GamesResponseV2, RoboatError> {
+        match self.user_games_internal(user_id, public_only, cursor).await {
             Ok(x) => Ok(x),
             Err(e) => Err(e),
         }
@@ -114,7 +120,8 @@ impl Client {
     /// * Use pagination cursors in the response to fetch additional pages of results.
     ///
     /// # Parameters
-    /// * `group_id` – The numeric group ID to retrieve games for
+    /// * `group_id`: The numeric group ID to retrieve games for
+    /// * `public_only`: Optional bool for getting public games only
     ///
     /// # Return Value Notes
     /// * Returns `GamesResponseV2` containing the paginated list of games if successful.
@@ -122,9 +129,9 @@ impl Client {
     /// * Each game contains detailed information including creator, root place, visit counts, and timestamps.
     ///
     /// # Errors
-    /// * [RoboatError::ReqwestError] – For any network issues.
-    /// * [RoboatError::ResponseError] – If Roblox returns a failure response.
-    /// * [RoboatError::MalformedResponse] – If the JSON response cannot be parsed.
+    /// * [RoboatError::ReqwestError] For any network issues.
+    /// * [RoboatError::ResponseError] If Roblox returns a failure response.
+    /// * [RoboatError::MalformedResponse] If the JSON response cannot be parsed.
     ///
     /// # Example
     /// ```no_run
@@ -153,8 +160,16 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ``
-    pub async fn group_games(&self, group_id: u64) -> Result<GamesResponseV2, RoboatError> {
-        match self.group_games_interal(group_id).await {
+    pub async fn group_games(
+        &self,
+        group_id: u64,
+        public_only: Option<bool>,
+        cursor: Option<String>,
+    ) -> Result<GamesResponseV2, RoboatError> {
+        match self
+            .group_games_interal(group_id, public_only, cursor)
+            .await
+        {
             Ok(x) => Ok(x),
             Err(e) => Err(e),
         }
@@ -171,9 +186,22 @@ mod internal {
         pub(super) async fn user_games_internal(
             &self,
             user_id: u64,
+            public_only: Option<bool>,
+            cursor: Option<String>,
         ) -> Result<GamesResponseV2, RoboatError> {
+            let cursor = cursor.unwrap_or_default();
             // Max limit is 50
-            let formatted_url = format!("{}/users/{}/games?limit=50", GAMES_V2_API, user_id);
+            let formatted_url = if public_only == Some(true) {
+                format!(
+                    "{}/users/{}/games?limit=50&accessFilter=Public&cursor={}",
+                    GAMES_V2_API, user_id, cursor
+                )
+            } else {
+                format!(
+                    "{}/users/{}/games?limit=50&cursor={}",
+                    GAMES_V2_API, user_id, cursor
+                )
+            };
             let request_result = self.reqwest_client.get(formatted_url).send().await;
 
             let response = Self::validate_request_result(request_result).await?;
@@ -184,8 +212,23 @@ mod internal {
         pub(super) async fn group_games_interal(
             &self,
             group_id: u64,
+            public_only: Option<bool>,
+            cursor: Option<String>,
         ) -> Result<GamesResponseV2, RoboatError> {
-            let formatted_url = format!("{}/groups/{}/gamesv2?limit=100", GAMES_V2_API, group_id);
+            let cursor = cursor.unwrap_or_default();
+
+            let formatted_url = if public_only == Some(true) {
+                format!(
+                    "{}/groups/{}/gamesv2?limit=100&accessFilter=Public&cursor={}",
+                    GAMES_V2_API, group_id, cursor
+                )
+            } else {
+                format!(
+                    "{}/groups/{}/gamesv2?limit=100&cursor={}",
+                    GAMES_V2_API, group_id, cursor
+                )
+            };
+
             let request_result = self.reqwest_client.get(formatted_url).send().await;
 
             let response = Self::validate_request_result(request_result).await?;
