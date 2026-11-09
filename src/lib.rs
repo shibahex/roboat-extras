@@ -388,6 +388,10 @@ pub enum RoboatError {
     /// Used when a file system path passed to a method is invalid.
     #[error("Invalid Path {0}")]
     InvalidPath(String),
+    /// Used when an asset type, or the file format of the asset data, is not supported
+    /// by an upload endpoint.
+    #[error("Unsupported Asset {0}")]
+    UnsupportedAsset(String),
 }
 
 /// The type of the challenge required to complete a request.

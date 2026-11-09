@@ -644,6 +644,107 @@ impl Client {
         }
     }
 
+    /// Uploads an asset using the Open Cloud API endpoint
+    /// <https://apis.roblox.com/assets/v1/assets>.
+    ///
+    /// The file format is detected from `asset_data`, so the raw bytes of a downloaded
+    /// asset (for example from [`Client::fetch_asset_data`]) can be passed directly.
+    ///
+    /// # Notes
+    /// * Requires a valid API key passed via `api_key`.
+    /// * Optionally uploads under a group if `group_id` is provided; otherwise uploads under the authenticated user.
+    /// * Will repeat once if the x-csrf-token is invalid.
+    /// * The upload is not finished when this returns. Use [`Client::poll_upload_operation`]
+    ///   with the returned path to get the new asset id.
+    ///
+    /// # Argument Notes
+    /// * `asset_type` must be one of the types supported by Open Cloud:
+    ///   * [`AssetType::Animation`] - `.rbxm`, `.rbxmx`
+    ///   * [`AssetType::Audio`] - `.mp3`, `.ogg`, `.wav`, `.flac`
+    ///   * [`AssetType::Decal`] - `.png`, `.jpeg`, `.bmp`
+    ///   * [`AssetType::Model`] - `.rbxm`, `.rbxmx`, `.fbx`, `.glb`
+    ///   * [`AssetType::Video`] - `.mp4`, `.mov`
+    /// * Images ([`AssetType::Image`]) are uploaded as a [`AssetType::Decal`]. The returned asset id
+    ///   is the decal, not the image inside it.
+    ///
+    /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * All errors under [Auth Required Errors](#auth-required-errors).
+    /// * All errors under [X-CSRF-TOKEN Required Errors](#x-csrf-token-required-errors).
+    /// * [`RoboatError::UnsupportedAsset`] - If the asset type or file format can't be uploaded.
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use roboat::ClientBuilder;
+    /// use roboat::catalog::AssetType;
+    /// use bytes::Bytes;
+    ///
+    /// const ROBLOSECURITY: &str = "roblosecurity";
+    /// const API_KEY: &str = "your_api_key";
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new()
+    ///     .roblosecurity(ROBLOSECURITY.to_string())
+    ///     .build();
+    ///
+    /// let audio_data = Bytes::from(std::fs::read("sound.ogg")?);
+    ///
+    /// let upload = client.upload_asset(
+    ///     API_KEY.to_string(),
+    ///     None, // group_id, or None to upload as user
+    ///     "My Sound".to_string(),
+    ///     "An example sound.".to_string(),
+    ///     AssetType::Audio,
+    ///     &audio_data,
+    /// ).await?;
+    ///
+    /// println!("Upload started: {}", upload.path);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn upload_asset(
+        &self,
+        api_key: String,
+        group_id: Option<u64>,
+        name: String,
+        description: String,
+        asset_type: AssetType,
+        asset_data: &Bytes,
+    ) -> Result<request_types::UploadAssetRaw, RoboatError> {
+        match self
+            .cloud_upload_asset_internal(
+                api_key.clone(),
+                group_id,
+                name.clone(),
+                description.clone(),
+                asset_type,
+                asset_data,
+            )
+            .await
+        {
+            Ok(x) => Ok(x),
+            Err(e) => match e {
+                RoboatError::InvalidXcsrf(new_xcsrf) => {
+                    self.set_xcsrf(new_xcsrf).await;
+
+                    self.cloud_upload_asset_internal(
+                        api_key,
+                        group_id,
+                        name,
+                        description,
+                        asset_type,
+                        asset_data,
+                    )
+                    .await
+                }
+                _ => Err(e),
+            },
+        }
+    }
+
     /// Uploads classic clothing to a group. This currently only works for classic clothing and
     /// for people uploading from groups. This is because the endpoint is not fully understood yet
     /// and reverse engineering it is expensive.
@@ -701,7 +802,7 @@ mod internal {
     use reqwest::header;
 
     use super::{
-        request_types, sort_items_by_argument_order, ClassicClothingType,
+        cloud_upload_file_format, request_types, sort_items_by_argument_order, ClassicClothingType,
         NonTradableLimitedDetails, PurchaseNonTradableLimitedError, COLLECTIBLE_ITEM_DETAILS_API,
         OPEN_CLOUD_ASSET_API, PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1,
         PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2,
@@ -858,30 +959,35 @@ mod internal {
             asset_type: catalog::AssetType,
             asset_data: &Bytes,
         ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-            let creator_json = match group_id {
-                Some(id) => format!("\"groupId\":\"{id}\""),
+            let creator = match group_id {
+                Some(id) => serde_json::json!({ "groupId": id.to_string() }),
                 None => {
                     let user_id = self.user_id().await?;
-                    format!("\"userId\":\"{user_id}\"")
+                    serde_json::json!({ "userId": user_id.to_string() })
                 }
             };
+
+            let (file_name, mime_type) = cloud_upload_file_format(asset_type, asset_data)?;
+
+            let request_body = serde_json::json!({
+                "displayName": name,
+                "description": description,
+                "assetType": asset_type.to_string(),
+                "creationContext": {
+                    "creator": creator,
+                    "expectedPrice": 0,
+                },
+            });
 
             let form = reqwest::multipart::Form::new()
                 .part(
                     "fileContent",
                     reqwest::multipart::Part::bytes(asset_data.to_vec())
-                        .file_name("asset.rbxm")
-                        .mime_str("model/x-rbxm")
-                        .map_err(|e| RoboatError::MalformedResponse)?,
+                        .file_name(file_name)
+                        .mime_str(mime_type)
+                        .map_err(|_| RoboatError::MalformedResponse)?,
                 )
-                .text(
-                    "request",
-                    format!(
-                        "{{\"displayName\":\"{name}\",\"description\":\"{description}\",\
-                         \"assetType\":\"{asset_type}\",\"creationContext\":{{\"creator\":{{{creator_json}}},\
-                         \"expectedPrice\":0}}}}"
-                    ),
-                );
+                .text("request", request_body.to_string());
 
             let response_result = self
                 .reqwest_client
@@ -942,6 +1048,70 @@ mod internal {
             Ok(())
         }
     }
+}
+
+/// Gets the file name and mime type that the Open Cloud upload endpoint expects
+/// for an asset, by checking the asset type and the first bytes of the file.
+///
+/// For example, an [`AssetType::Audio`] that starts with `OggS` returns `("asset.ogg", "audio/ogg")`.
+fn cloud_upload_file_format(
+    asset_type: AssetType,
+    asset_data: &[u8],
+) -> Result<(&'static str, &'static str), RoboatError> {
+    let is_rbxm = asset_data.starts_with(b"<roblox!");
+    let is_rbxmx = !is_rbxm && asset_data.starts_with(b"<roblox");
+    let is_mp4 = asset_data.get(4..8) == Some(b"ftyp");
+
+    let format = match asset_type {
+        AssetType::Animation | AssetType::Model if is_rbxm => ("asset.rbxm", "model/x-rbxm"),
+        AssetType::Animation | AssetType::Model if is_rbxmx => ("asset.rbxmx", "model/x-rbxmx"),
+        AssetType::Model if asset_data.starts_with(b"glTF") => ("asset.glb", "model/gltf-binary"),
+        AssetType::Model if asset_data.starts_with(b"Kaydara FBX Binary") => {
+            ("asset.fbx", "model/fbx")
+        }
+        AssetType::Audio if asset_data.starts_with(b"OggS") => ("asset.ogg", "audio/ogg"),
+        AssetType::Audio if asset_data.starts_with(b"fLaC") => ("asset.flac", "audio/flac"),
+        AssetType::Audio
+            if asset_data.starts_with(b"RIFF") && asset_data.get(8..12) == Some(b"WAVE") =>
+        {
+            ("asset.wav", "audio/wav")
+        }
+        AssetType::Audio
+            if asset_data.starts_with(b"ID3")
+                || (asset_data.len() > 1
+                    && asset_data[0] == 0xFF
+                    && asset_data[1] & 0xE0 == 0xE0) =>
+        {
+            ("asset.mp3", "audio/mpeg")
+        }
+        AssetType::Decal if asset_data.starts_with(b"\x89PNG") => ("asset.png", "image/png"),
+        AssetType::Decal if asset_data.starts_with(&[0xFF, 0xD8, 0xFF]) => {
+            ("asset.jpeg", "image/jpeg")
+        }
+        AssetType::Decal if asset_data.starts_with(b"BM") => ("asset.bmp", "image/bmp"),
+        AssetType::Video if is_mp4 && asset_data.get(8..12) == Some(b"qt  ") => {
+            ("asset.mov", "video/mov")
+        }
+        AssetType::Video if is_mp4 => ("asset.mp4", "video/mp4"),
+        AssetType::Animation
+        | AssetType::Model
+        | AssetType::Audio
+        | AssetType::Decal
+        | AssetType::Video => {
+            return Err(RoboatError::UnsupportedAsset(format!(
+                "file format for {}",
+                asset_type
+            )))
+        }
+        _ => {
+            return Err(RoboatError::UnsupportedAsset(format!(
+                "type {}",
+                asset_type
+            )))
+        }
+    };
+
+    Ok(format)
 }
 
 /// Makes sure that the items are in the same order as the arguments.
