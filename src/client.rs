@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 /// A client used for making requests to the Roblox API.
 ///
-/// The client stores the roblosecurity cookie, X-CSRF-TOKEN header, and an HTTPS client to send web
+/// The client stores the roblosecurity cookie, Open Cloud api key, X-CSRF-TOKEN header, and an HTTPS client to send web
 /// requests. The client also caches the user id, username, and display name of the user.
 ///
 /// Constructed using a [`ClientBuilder`].
@@ -27,6 +27,15 @@ use tokio::sync::RwLock;
 /// const ROBLOSECURITY: &str = "roblosecurity";
 ///
 /// let client = ClientBuilder::new().roblosecurity(ROBLOSECURITY.to_string()).build();
+/// ```
+///
+/// ## With an Open Cloud Api Key
+/// ```
+/// use roboat::ClientBuilder;
+///
+/// const API_KEY: &str = "api_key";
+///
+/// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
 /// ```
 ///
 /// ## With a Custom Reqwest Client
@@ -61,6 +70,11 @@ use tokio::sync::RwLock;
 /// - [`RoboatError::InvalidRoblosecurity`]
 /// - [`RoboatError::RoblosecurityNotSet`]
 ///
+/// # Api Key Required Errors
+/// The errors that can be returned by any of `Client`'s methods that use Open Cloud and require an api key are:
+/// - [`RoboatError::InvalidApiKey`]
+/// - [`RoboatError::ApiKeyNotSet`]
+///
 /// # X-CSRF-TOKEN Required Errors
 /// The errors that can be returned by any of `Client`'s methods that require the X-CSRF-TOKEN header are:
 /// - [`RoboatError::InvalidXcsrf`]
@@ -74,6 +88,8 @@ use tokio::sync::RwLock;
 pub struct Client {
     /// The full cookie that includes the roblosecurity token.
     pub(crate) cookie_string: Option<HeaderValue>,
+    /// The Open Cloud api key, sent in the x-api-key header.
+    pub(crate) api_key: Option<HeaderValue>,
     /// The field holding the value for the X-CSRF-TOKEN header used in and returned by endpoints.
     pub(crate) xcsrf: RwLock<String>,
     /// Holds the user id, username, and display name of the user.
@@ -86,6 +102,7 @@ pub struct Client {
 #[derive(Clone, Debug, Default)]
 pub struct ClientBuilder {
     roblosecurity: Option<String>,
+    api_key: Option<String>,
     reqwest_client: Option<reqwest::Client>,
 }
 
@@ -174,6 +191,28 @@ impl Client {
             None => Err(RoboatError::RoblosecurityNotSet),
         }
     }
+
+    /// Returns a copy of the api key header stored in the client.
+    /// If the api key has not been set, [`RoboatError::ApiKeyNotSet`] is returned.
+    pub(crate) fn api_key(&self) -> Result<HeaderValue, RoboatError> {
+        let api_key_opt = &self.api_key;
+
+        match api_key_opt {
+            Some(api_key) => Ok(api_key.clone()),
+            None => Err(RoboatError::ApiKeyNotSet),
+        }
+    }
+
+    /// Open Cloud endpoints don't use a roblosecurity or an xcsrf, so the auth errors
+    /// returned from them mean the api key was rejected.
+    pub(crate) fn api_key_error(error: RoboatError) -> RoboatError {
+        match error {
+            RoboatError::InvalidRoblosecurity
+            | RoboatError::XcsrfNotReturned
+            | RoboatError::UnknownStatus403Format => RoboatError::InvalidApiKey,
+            _ => error,
+        }
+    }
 }
 
 impl ClientBuilder {
@@ -194,6 +233,25 @@ impl ClientBuilder {
     /// ```
     pub fn roblosecurity(mut self, roblosecurity: String) -> Self {
         self.roblosecurity = Some(roblosecurity);
+        self
+    }
+
+    /// Sets the Open Cloud api key for the client. This is used by Open Cloud endpoints
+    /// instead of the roblosecurity, and can be set alongside it.
+    ///
+    /// Api keys are made at <https://create.roblox.com/dashboard/credentials>. Unlike a roblosecurity,
+    /// a key only has the scopes it was given, so check the docs of each method for the scopes it needs.
+    ///
+    /// # Example
+    /// ```rust
+    /// use roboat::ClientBuilder;
+    ///
+    /// const API_KEY: &str = "api_key";
+    ///
+    /// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
+    /// ```
+    pub fn api_key(mut self, api_key: String) -> Self {
+        self.api_key = Some(api_key);
         self
     }
 
@@ -225,6 +283,7 @@ impl ClientBuilder {
                 .roblosecurity
                 .as_ref()
                 .map(|x| create_cookie_string_header(x)),
+            api_key: self.api_key.as_ref().map(|x| create_api_key_header(x)),
             reqwest_client: self.reqwest_client.unwrap_or_default(),
             ..Default::default()
         }
@@ -235,6 +294,15 @@ fn create_cookie_string_header(roblosecurity: &str) -> HeaderValue {
     // We panic here because I really really really hope that nobody is using invalid characters in their roblosecurity.
     let mut header = HeaderValue::from_str(&format!(".ROBLOSECURITY={}", roblosecurity))
         .expect("Invalid roblosecurity characters.");
+
+    header.set_sensitive(true);
+
+    header
+}
+
+fn create_api_key_header(api_key: &str) -> HeaderValue {
+    // Same as the roblosecurity, we panic here as an api key should never have invalid characters.
+    let mut header = HeaderValue::from_str(api_key).expect("Invalid api key characters.");
 
     header.set_sensitive(true);
 

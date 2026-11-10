@@ -536,15 +536,15 @@ impl Client {
     /// Call this method repeatedly until `done == true`.
     ///
     /// # Notes
-    /// * Requires a valid API key with the `asset:read` scope. A roblosecurity is not needed.
+    /// * Requires an api key set with [`crate::ClientBuilder::api_key`], with the `asset:read` scope.
+    ///   A roblosecurity is not needed.
     ///
     /// # Argument Notes
-    /// * `api_key` - Open Cloud API key.
     /// * `path` - Operation path returned from an upload request (`operations/{operationId}`).
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
-    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * All errors under [Api Key Required Errors](#api-key-required-errors).
     /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
     /// # Examples
@@ -559,13 +559,12 @@ impl Client {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::new().build();
+    /// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
     ///
     /// let animation_data = Bytes::from(std::fs::read("animation.rbxm")?);
     ///
     /// let upload = client
     ///     .upload_asset(
-    ///         API_KEY.to_string(),
     ///         AssetCreator::User(123456789),
     ///         "My Animation".to_string(),
     ///         "An example animation.".to_string(),
@@ -576,7 +575,7 @@ impl Client {
     ///
     /// loop {
     ///     let operation = client
-    ///         .poll_upload_operation(API_KEY.to_string(), upload.path.clone())
+    ///         .poll_upload_operation(upload.path.clone())
     ///         .await?;
     ///
     ///     if operation.done {
@@ -591,10 +590,9 @@ impl Client {
     /// ```
     pub async fn poll_upload_operation(
         &self,
-        api_key: String,
         path: String,
     ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-        self.poll_upload_operation_internal(api_key, path).await
+        self.poll_upload_operation_internal(path).await
     }
 
     /// Uploads an animation asset using the Open Cloud API endpoint
@@ -603,7 +601,8 @@ impl Client {
     /// This is the same as calling [`Client::upload_asset`] with [`AssetType::Animation`].
     ///
     /// # Notes
-    /// * Requires a valid API key with the `asset:read` and `asset:write` scopes. A roblosecurity is not needed.
+    /// * Requires an api key set with [`crate::ClientBuilder::api_key`], with the `asset:read` and
+    ///   `asset:write` scopes. A roblosecurity is not needed.
     /// * `creator` is who the animation is uploaded under. It must be the owner of the API key,
     ///   or a group the owner can upload to.
     /// * `animation_data` must be the raw bytes of a valid `.rbxm` or `.rbxmx` animation file.
@@ -612,7 +611,7 @@ impl Client {
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
-    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * All errors under [Api Key Required Errors](#api-key-required-errors).
     /// * [`RoboatError::UnsupportedAsset`] - If `animation_data` isn't a `.rbxm` or `.rbxmx` file.
     /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
@@ -627,12 +626,11 @@ impl Client {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::new().build();
+    /// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
     ///
     /// let animation_data = Bytes::from(std::fs::read("animation.rbxm")?);
     ///
     /// let upload = client.upload_animation(
-    ///     API_KEY.to_string(),
     ///     AssetCreator::Group(123456789),
     ///     "My Animation".to_string(),
     ///     "An example animation.".to_string(),
@@ -645,14 +643,12 @@ impl Client {
     /// ```
     pub async fn upload_animation(
         &self,
-        api_key: String,
         creator: AssetCreator,
         name: String,
         description: String,
         animation_data: &Bytes,
     ) -> Result<request_types::UploadAssetRaw, RoboatError> {
         self.upload_asset(
-            api_key,
             creator,
             name,
             description,
@@ -669,7 +665,8 @@ impl Client {
     /// asset (for example from [`Client::fetch_cloud_asset_data`]) can be passed directly.
     ///
     /// # Notes
-    /// * Requires a valid API key with the `asset:read` and `asset:write` scopes. A roblosecurity is not needed.
+    /// * Requires an api key set with [`crate::ClientBuilder::api_key`], with the `asset:read` and
+    ///   `asset:write` scopes. A roblosecurity is not needed.
     /// * `creator` is who the asset is uploaded under. It must be the owner of the API key,
     ///   or a group the owner can upload to.
     /// * The upload is not finished when this returns. Use [`Client::poll_upload_operation`]
@@ -687,7 +684,7 @@ impl Client {
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
-    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * All errors under [Api Key Required Errors](#api-key-required-errors).
     /// * [`RoboatError::UnsupportedAsset`] - If the asset type or file format can't be uploaded.
     /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
@@ -703,12 +700,11 @@ impl Client {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::new().build();
+    /// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
     ///
     /// let audio_data = Bytes::from(std::fs::read("sound.ogg")?);
     ///
     /// let upload = client.upload_asset(
-    ///     API_KEY.to_string(),
     ///     AssetCreator::User(123456789),
     ///     "My Sound".to_string(),
     ///     "An example sound.".to_string(),
@@ -722,22 +718,14 @@ impl Client {
     /// ```
     pub async fn upload_asset(
         &self,
-        api_key: String,
         creator: AssetCreator,
         name: String,
         description: String,
         asset_type: AssetType,
         asset_data: &Bytes,
     ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-        self.cloud_upload_asset_internal(
-            api_key,
-            creator,
-            name,
-            description,
-            asset_type,
-            asset_data,
-        )
-        .await
+        self.cloud_upload_asset_internal(creator, name, description, asset_type, asset_data)
+            .await
     }
 
     /// Uploads classic clothing to a group. This currently only works for classic clothing and
@@ -804,7 +792,7 @@ mod internal {
     };
     use crate::{
         bedev2::{request_types::AssetInfo, ASSET_API},
-        catalog, Client, RoboatError, XCSRF_HEADER,
+        catalog, Client, RoboatError, API_KEY_HEADER, XCSRF_HEADER,
     };
 
     impl Client {
@@ -928,7 +916,6 @@ mod internal {
 
         pub(super) async fn poll_upload_operation_internal(
             &self,
-            api_key: String,
             path: String,
         ) -> Result<request_types::UploadAssetRaw, RoboatError> {
             // The path from an upload response looks like "operations/{operationId}"
@@ -938,18 +925,19 @@ mod internal {
             let response_result = self
                 .reqwest_client
                 .get(url)
-                .header("x-api-key", api_key)
+                .header(API_KEY_HEADER, self.api_key()?)
                 .send()
                 .await;
 
-            let response = Self::validate_request_result(response_result).await?;
+            let response = Self::validate_request_result(response_result)
+                .await
+                .map_err(Self::api_key_error)?;
             let raw = Self::parse_to_raw::<request_types::UploadAssetRaw>(response).await?;
             Ok(raw)
         }
 
         pub(super) async fn cloud_upload_asset_internal(
             &self,
-            api_key: String,
             creator: AssetCreator,
             name: String,
             description: String,
@@ -986,12 +974,14 @@ mod internal {
             let response_result = self
                 .reqwest_client
                 .post(OPEN_CLOUD_ASSET_API)
-                .header("x-api-key", api_key)
+                .header(API_KEY_HEADER, self.api_key()?)
                 .multipart(form)
                 .send()
                 .await;
 
-            let response = Self::validate_request_result(response_result).await?;
+            let response = Self::validate_request_result(response_result)
+                .await
+                .map_err(Self::api_key_error)?;
             let raw = Self::parse_to_raw::<request_types::UploadAssetRaw>(response).await?;
             Ok(raw)
         }

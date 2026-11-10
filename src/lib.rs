@@ -269,6 +269,8 @@ mod validation;
 
 // Used in request header keys.
 const XCSRF_HEADER: &str = "x-csrf-token";
+// Used for Open Cloud endpoints, which use an api key instead of a roblosecurity.
+const API_KEY_HEADER: &str = "x-api-key";
 // The user agent used for fussy endpoints.
 const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0";
@@ -392,6 +394,13 @@ pub enum RoboatError {
     /// by an upload endpoint.
     #[error("Unsupported Asset {0}")]
     UnsupportedAsset(String),
+    /// Used when no api key is set, on an Open Cloud endpoint that requires it.
+    #[error("Api Key Not Set")]
+    ApiKeyNotSet,
+    /// Returned when an Open Cloud endpoint rejects the api key. The key is either invalid,
+    /// expired, not allowed from this IP address, or missing the scope the endpoint needs.
+    #[error("Invalid Api Key")]
+    InvalidApiKey,
 }
 
 /// The type of the challenge required to complete a request.

@@ -28,15 +28,14 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let client = ClientBuilder::new().build();
+    let client = ClientBuilder::new().api_key(args.api_key).build();
 
     let existing_audio = client
-        .fetch_cloud_asset_data(args.api_key.clone(), args.asset_id, args.place_id)
+        .fetch_cloud_asset_data(args.asset_id, args.place_id)
         .await?;
 
     let response = client
         .upload_asset(
-            args.api_key.clone(),
             AssetCreator::User(args.user_id),
             "roboatTest".to_string(),
             "This is a roboat example".to_string(),
@@ -48,9 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Uploaded Audio!");
 
     loop {
-        let operation = client
-            .poll_upload_operation(args.api_key.clone(), response.path.clone())
-            .await?;
+        let operation = client.poll_upload_operation(response.path.clone()).await?;
 
         if operation.done {
             if let Some(resp) = operation.response {
