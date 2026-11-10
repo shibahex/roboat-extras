@@ -3,7 +3,8 @@ use crate::catalog::{AssetType, CreatorType};
 use crate::{Client, RoboatError};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-mod request_types;
+/// All the response structs
+pub mod request_types;
 
 const COLLECTIBLE_ITEM_DETAILS_API: &str =
     "https://apis.roblox.com/marketplace-items/v1/items/details";
@@ -17,8 +18,11 @@ const PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1: &str =
 const ASSET_API: &str = "https://apis.roblox.com/assets/user-auth/v1/assets";
 
 /// Open Cloud asset upload endpoint. Requires an API key via `x-api-key` header.
-/// Supports Animation (.rbxm/.rbxmx) and Audio uploads, unlike the user-auth endpoint.
+/// Supports Animation, Audio, Decal, Model and Video uploads, unlike the user-auth endpoint.
 const OPEN_CLOUD_ASSET_API: &str = "https://apis.roblox.com/assets/v1/assets";
+
+/// Open Cloud endpoint for checking an upload. Requires an API key via `x-api-key` header.
+const OPEN_CLOUD_OPERATION_API: &str = "https://apis.roblox.com/assets/v1/operations";
 
 const PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2: &str = "/purchase-item";
 
@@ -72,6 +76,15 @@ impl std::fmt::Display for ClassicClothingType {
             ClassicClothingType::TShirt => write!(f, "T-Shirt"),
         }
     }
+}
+
+/// Who an asset is uploaded under, used in [`Client::upload_asset`] and [`Client::upload_animation`].
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Copy)]
+pub enum AssetCreator {
+    /// Upload under a user, using their user id.
+    User(u64),
+    /// Upload under a group, using its group id.
+    Group(u64),
 }
 
 /// A struct containing (mostly) all the fields possibly returned from <https://apis.roblox.com/marketplace-items/v1/items/details>.
@@ -516,38 +529,65 @@ impl Client {
         }
     }
 
-    /// Polls an Open Cloud asset upload operation.
+    /// Polls an Open Cloud asset upload operation using the endpoint
+    /// <https://apis.roblox.com/assets/v1/operations/{operationId}>.
     ///
     /// Upload endpoints return an operation path rather than the final asset.
     /// Call this method repeatedly until `done == true`.
     ///
-    /// # Arguments
+    /// # Notes
+    /// * Requires a valid API key with the `asset:read` scope. A roblosecurity is not needed.
     ///
+    /// # Argument Notes
     /// * `api_key` - Open Cloud API key.
-    /// * `path` - Operation path returned from an upload request.
+    /// * `path` - Operation path returned from an upload request (`operations/{operationId}`).
     ///
     /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
-    /// * All standard request and response parsing errors.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```no_run
+    /// use roboat::bedev2::AssetCreator;
+    /// use roboat::catalog::AssetType;
+    /// use roboat::ClientBuilder;
+    /// use bytes::Bytes;
+    ///
+    /// const API_KEY: &str = "your_api_key";
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new().build();
+    ///
+    /// let animation_data = Bytes::from(std::fs::read("animation.rbxm")?);
+    ///
+    /// let upload = client
+    ///     .upload_asset(
+    ///         API_KEY.to_string(),
+    ///         AssetCreator::User(123456789),
+    ///         "My Animation".to_string(),
+    ///         "An example animation.".to_string(),
+    ///         AssetType::Animation,
+    ///         &animation_data,
+    ///     )
+    ///     .await?;
+    ///
     /// loop {
     ///     let operation = client
-    ///         .poll_upload_operation(
-    ///             api_key.clone(),
-    ///             upload.path.clone(),
-    ///         )
+    ///         .poll_upload_operation(API_KEY.to_string(), upload.path.clone())
     ///         .await?;
     ///
     ///     if operation.done {
-    ///         println!("Upload completed!");
+    ///         println!("New Asset ID: {:?}", operation.response.and_then(|x| x.asset_id));
     ///         break;
     ///     }
     ///
     ///     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn poll_upload_operation(
         &self,
@@ -560,100 +600,78 @@ impl Client {
     /// Uploads an animation asset using the Open Cloud API endpoint
     /// <https://apis.roblox.com/assets/v1/assets>.
     ///
-    /// Unlike the user-auth endpoint, the Open Cloud endpoint supports Animation (.rbxm/.rbxmx)
-    /// uploads and requires an API key instead of a roblosecurity cookie.
-    ///
+    /// This is the same as calling [`Client::upload_asset`] with [`AssetType::Animation`].
     ///
     /// # Notes
-    /// * Requires a valid API key passed via `api_key`.
-    /// * Optionally uploads under a group if `group_id` is provided; otherwise uploads under the authenticated user.
-    /// * Will repeat once if the x-csrf-token is invalid.
+    /// * Requires a valid API key with the `asset:read` and `asset:write` scopes. A roblosecurity is not needed.
+    /// * `creator` is who the animation is uploaded under. It must be the owner of the API key,
+    ///   or a group the owner can upload to.
     /// * `animation_data` must be the raw bytes of a valid `.rbxm` or `.rbxmx` animation file.
+    /// * The upload is not finished when this returns. Use [`Client::poll_upload_operation`]
+    ///   with the returned path to get the new asset id.
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
-    /// * All errors under [Auth Required Errors](#auth-required-errors).
-    /// * All errors under [X-CSRF-TOKEN Required Errors](#x-csrf-token-required-errors).
+    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * [`RoboatError::UnsupportedAsset`] - If `animation_data` isn't a `.rbxm` or `.rbxmx` file.
     /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
     /// # Examples
     ///
     /// ```no_run
+    /// use roboat::bedev2::AssetCreator;
     /// use roboat::ClientBuilder;
     /// use bytes::Bytes;
     ///
-    /// const ROBLOSECURITY: &str = "roblosecurity";
     /// const API_KEY: &str = "your_api_key";
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::new()
-    ///     .roblosecurity(ROBLOSECURITY.to_string())
-    ///     .build();
+    /// let client = ClientBuilder::new().build();
     ///
     /// let animation_data = Bytes::from(std::fs::read("animation.rbxm")?);
     ///
-    /// client.upload_animation(
+    /// let upload = client.upload_animation(
     ///     API_KEY.to_string(),
-    ///     Some(123456789), // group_id, or None to upload as user
+    ///     AssetCreator::Group(123456789),
     ///     "My Animation".to_string(),
     ///     "An example animation.".to_string(),
     ///     &animation_data,
     /// ).await?;
     ///
-    /// println!("Successfully uploaded animation!");
+    /// println!("Upload started: {}", upload.path);
     /// # Ok(())
     /// # }
     /// ```
     pub async fn upload_animation(
         &self,
         api_key: String,
-        group_id: Option<u64>,
+        creator: AssetCreator,
         name: String,
         description: String,
         animation_data: &Bytes,
     ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-        match self
-            .cloud_upload_asset_internal(
-                api_key.clone(),
-                group_id,
-                name.clone(),
-                description.clone(),
-                AssetType::Animation,
-                animation_data,
-            )
-            .await
-        {
-            Ok(x) => Ok(x),
-            Err(e) => match e {
-                RoboatError::InvalidXcsrf(new_xcsrf) => {
-                    self.set_xcsrf(new_xcsrf).await;
-
-                    self.cloud_upload_asset_internal(
-                        api_key.clone(),
-                        group_id,
-                        name.clone(),
-                        description.clone(),
-                        AssetType::Animation,
-                        animation_data,
-                    )
-                    .await
-                }
-                _ => Err(e),
-            },
-        }
+        self.upload_asset(
+            api_key,
+            creator,
+            name,
+            description,
+            AssetType::Animation,
+            animation_data,
+        )
+        .await
     }
 
     /// Uploads an asset using the Open Cloud API endpoint
     /// <https://apis.roblox.com/assets/v1/assets>.
     ///
     /// The file format is detected from `asset_data`, so the raw bytes of a downloaded
-    /// asset (for example from [`Client::fetch_asset_data`]) can be passed directly.
+    /// asset (for example from [`Client::fetch_cloud_asset_data`]) can be passed directly.
     ///
     /// # Notes
-    /// * Requires a valid API key passed via `api_key`.
-    /// * Optionally uploads under a group if `group_id` is provided; otherwise uploads under the authenticated user.
-    /// * Will repeat once if the x-csrf-token is invalid.
+    /// * Requires a valid API key with the `asset:read` and `asset:write` scopes. A roblosecurity is not needed.
+    /// * `creator` is who the asset is uploaded under. It must be the owner of the API key,
+    ///   or a group the owner can upload to.
     /// * The upload is not finished when this returns. Use [`Client::poll_upload_operation`]
     ///   with the returned path to get the new asset id.
     ///
@@ -669,32 +687,29 @@ impl Client {
     ///
     /// # Errors
     /// * All errors under [Standard Errors](#standard-errors).
-    /// * All errors under [Auth Required Errors](#auth-required-errors).
-    /// * All errors under [X-CSRF-TOKEN Required Errors](#x-csrf-token-required-errors).
+    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
     /// * [`RoboatError::UnsupportedAsset`] - If the asset type or file format can't be uploaded.
     /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use roboat::ClientBuilder;
+    /// use roboat::bedev2::AssetCreator;
     /// use roboat::catalog::AssetType;
+    /// use roboat::ClientBuilder;
     /// use bytes::Bytes;
     ///
-    /// const ROBLOSECURITY: &str = "roblosecurity";
     /// const API_KEY: &str = "your_api_key";
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::new()
-    ///     .roblosecurity(ROBLOSECURITY.to_string())
-    ///     .build();
+    /// let client = ClientBuilder::new().build();
     ///
     /// let audio_data = Bytes::from(std::fs::read("sound.ogg")?);
     ///
     /// let upload = client.upload_asset(
     ///     API_KEY.to_string(),
-    ///     None, // group_id, or None to upload as user
+    ///     AssetCreator::User(123456789),
     ///     "My Sound".to_string(),
     ///     "An example sound.".to_string(),
     ///     AssetType::Audio,
@@ -708,41 +723,21 @@ impl Client {
     pub async fn upload_asset(
         &self,
         api_key: String,
-        group_id: Option<u64>,
+        creator: AssetCreator,
         name: String,
         description: String,
         asset_type: AssetType,
         asset_data: &Bytes,
     ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-        match self
-            .cloud_upload_asset_internal(
-                api_key.clone(),
-                group_id,
-                name.clone(),
-                description.clone(),
-                asset_type,
-                asset_data,
-            )
-            .await
-        {
-            Ok(x) => Ok(x),
-            Err(e) => match e {
-                RoboatError::InvalidXcsrf(new_xcsrf) => {
-                    self.set_xcsrf(new_xcsrf).await;
-
-                    self.cloud_upload_asset_internal(
-                        api_key,
-                        group_id,
-                        name,
-                        description,
-                        asset_type,
-                        asset_data,
-                    )
-                    .await
-                }
-                _ => Err(e),
-            },
-        }
+        self.cloud_upload_asset_internal(
+            api_key,
+            creator,
+            name,
+            description,
+            asset_type,
+            asset_data,
+        )
+        .await
     }
 
     /// Uploads classic clothing to a group. This currently only works for classic clothing and
@@ -802,10 +797,10 @@ mod internal {
     use reqwest::header;
 
     use super::{
-        cloud_upload_file_format, request_types, sort_items_by_argument_order, ClassicClothingType,
-        NonTradableLimitedDetails, PurchaseNonTradableLimitedError, COLLECTIBLE_ITEM_DETAILS_API,
-        OPEN_CLOUD_ASSET_API, PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1,
-        PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2,
+        cloud_upload_file_format, request_types, sort_items_by_argument_order, AssetCreator,
+        ClassicClothingType, NonTradableLimitedDetails, PurchaseNonTradableLimitedError,
+        COLLECTIBLE_ITEM_DETAILS_API, OPEN_CLOUD_ASSET_API, OPEN_CLOUD_OPERATION_API,
+        PURCHASE_NON_TRADEABLE_LIMITED_API_PART_1, PURCHASE_NON_TRADEABLE_LIMITED_API_PART_2,
     };
     use crate::{
         bedev2::{request_types::AssetInfo, ASSET_API},
@@ -936,7 +931,9 @@ mod internal {
             api_key: String,
             path: String,
         ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-            let url = format!("https://apis.roblox.com/assets/v1/{}", path);
+            // The path from an upload response looks like "operations/{operationId}"
+            let operation_id = path.trim_start_matches("operations/");
+            let url = format!("{}/{}", OPEN_CLOUD_OPERATION_API, operation_id);
 
             let response_result = self
                 .reqwest_client
@@ -953,18 +950,15 @@ mod internal {
         pub(super) async fn cloud_upload_asset_internal(
             &self,
             api_key: String,
-            group_id: Option<u64>,
+            creator: AssetCreator,
             name: String,
             description: String,
             asset_type: catalog::AssetType,
             asset_data: &Bytes,
         ) -> Result<request_types::UploadAssetRaw, RoboatError> {
-            let creator = match group_id {
-                Some(id) => serde_json::json!({ "groupId": id.to_string() }),
-                None => {
-                    let user_id = self.user_id().await?;
-                    serde_json::json!({ "userId": user_id.to_string() })
-                }
+            let creator = match creator {
+                AssetCreator::User(id) => serde_json::json!({ "userId": id.to_string() }),
+                AssetCreator::Group(id) => serde_json::json!({ "groupId": id.to_string() }),
             };
 
             let (file_name, mime_type) = cloud_upload_file_format(asset_type, asset_data)?;
