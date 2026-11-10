@@ -4,6 +4,9 @@
 const ASSETDELIVERY_ASSET_API: &str = "https://assetdelivery.roblox.com/v1/asset/?ID={id}";
 const ASSETDELIVERY_V2_API: &str = "https://assetdelivery.roblox.com/v2";
 
+/// Open Cloud version of the asset delivery API. Requires an API key via `x-api-key` header.
+const OPEN_CLOUD_ASSET_DELIVERY_API: &str = "https://apis.roblox.com/asset-delivery-api/v1/assetId";
+
 use crate::catalog::AssetType;
 use crate::validation::RobloxErrorRaw;
 use crate::{Client, RoboatError, XCSRF_HEADER};
@@ -32,6 +35,14 @@ pub struct AssetIdResponse {
     pub is_archived: bool,
     pub asset_type_id: u64,
     pub is_recordable: bool,
+}
+
+/// Struct for the Open Cloud <https://apis.roblox.com/asset-delivery-api/v1/assetId/{assetId}> endpoint.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAssetLocation {
+    /// A temporary CDN url for the asset content.
+    pub location: String,
 }
 
 /// Structs for /v2/assets/batch All of these are optional to define what Asset you want information from.
@@ -140,7 +151,7 @@ impl Client {
     ///
     /// ```no_run
     /// use clap::Parser;
-    /// use roboat::assetdelivery::request_types::AssetBatchPayload;
+    /// use roboat::assetdelivery::AssetBatchPayload;
     ///
     /// #[derive(Parser, Debug)]
     /// struct Args {
@@ -223,9 +234,8 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-
-    // WARNING: Theres a V2 API https://assetdelivery.roblox.com/v2/assetid/119472671657225 that
-    // has location of the file. Migrate to it if they ever ratelimit/remove the v1 API
+    // NOTE: Roblox discourages using a cookie on assetdelivery.roblox.com. Prefer
+    // Client::fetch_cloud_asset_data, which uses an API key.
     /// If this API hangs, use a timeout and retry.
     pub async fn fetch_asset_data(&self, asset_id: u64) -> Result<Bytes, RoboatError> {
         let cookie_string = self.cookie_string()?;
@@ -246,13 +256,112 @@ impl Client {
         let bytes = response.bytes().await.map_err(RoboatError::ReqwestError)?;
         Ok(bytes)
     }
+
+    /// Gets a temporary download url for an asset using the Open Cloud endpoint
+    /// <https://apis.roblox.com/asset-delivery-api/v1/assetId/{assetId}>.
+    ///
+    /// This is the Open Cloud version of [`Client::fetch_asset_metadata`], and works on all asset types.
+    ///
+    /// # Notes
+    /// * Requires a valid API key with the `legacy-asset:manage` scope. A roblosecurity is not needed.
+    /// * Only works with API keys made by a user, not a group.
+    /// * Add `place_id` if the asset is not owned by the API key owner.
+    ///   The place id can be any place the owner of the asset has.
+    ///
+    /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use roboat::ClientBuilder;
+    ///
+    /// const API_KEY: &str = "your_api_key";
+    /// const ASSET_ID: u64 = 12345678;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new().build();
+    ///
+    /// let asset = client
+    ///     .fetch_cloud_asset_location(API_KEY.to_string(), ASSET_ID, None)
+    ///     .await?;
+    /// println!("Download url: {}", asset.location);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn fetch_cloud_asset_location(
+        &self,
+        api_key: String,
+        asset_id: u64,
+        place_id: Option<u64>,
+    ) -> Result<CloudAssetLocation, RoboatError> {
+        self.fetch_cloud_asset_location_internal(api_key, asset_id, place_id)
+            .await
+    }
+
+    /// Downloads the raw bytes of an asset using the Open Cloud endpoint
+    /// <https://apis.roblox.com/asset-delivery-api/v1/assetId/{assetId}>.
+    ///
+    /// This is the Open Cloud version of [`Client::fetch_asset_data`]. It gets the download url
+    /// with [`Client::fetch_cloud_asset_location`], then downloads the file from it.
+    ///
+    /// # Notes
+    /// * Requires a valid API key with the `legacy-asset:manage` scope. A roblosecurity is not needed.
+    /// * Only works with API keys made by a user, not a group.
+    /// * Add `place_id` if the asset is not owned by the API key owner.
+    ///   The place id can be any place the owner of the asset has.
+    /// * Requires Gzip feature on reqwest for automatic decompression of the data.
+    ///
+    /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * [`RoboatError::InvalidRoblosecurity`] - If the API key is invalid or is missing the scope.
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use roboat::ClientBuilder;
+    ///
+    /// const API_KEY: &str = "your_api_key";
+    /// const ASSET_ID: u64 = 12345678;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new().build();
+    ///
+    /// let data = client
+    ///     .fetch_cloud_asset_data(API_KEY.to_string(), ASSET_ID, None)
+    ///     .await?;
+    /// println!("Downloaded {} bytes", data.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn fetch_cloud_asset_data(
+        &self,
+        api_key: String,
+        asset_id: u64,
+        place_id: Option<u64>,
+    ) -> Result<Bytes, RoboatError> {
+        let asset = self
+            .fetch_cloud_asset_location(api_key, asset_id, place_id)
+            .await?;
+
+        let response_result = self.reqwest_client.get(&asset.location).send().await;
+        let response = Self::validate_request_result(response_result).await?;
+
+        let bytes = response.bytes().await.map_err(RoboatError::ReqwestError)?;
+        Ok(bytes)
+    }
 }
 
 mod internal {
     use crate::assetdelivery::AssetBatchPayload;
     use crate::assetdelivery::AssetBatchResponse;
     use crate::assetdelivery::AssetIdResponse;
+    use crate::assetdelivery::CloudAssetLocation;
     use crate::assetdelivery::ASSETDELIVERY_V2_API;
+    use crate::assetdelivery::OPEN_CLOUD_ASSET_DELIVERY_API;
     use crate::catalog::catalog_types;
     use crate::{Client, RoboatError};
     use reqwest::header;
@@ -330,6 +439,29 @@ mod internal {
             }
 
             Ok(meta_data)
+        }
+
+        pub(super) async fn fetch_cloud_asset_location_internal(
+            &self,
+            api_key: String,
+            asset_id: u64,
+            place_id: Option<u64>,
+        ) -> Result<CloudAssetLocation, RoboatError> {
+            let formatted_url = format!("{}/{}", OPEN_CLOUD_ASSET_DELIVERY_API, asset_id);
+
+            let mut request = self
+                .reqwest_client
+                .get(formatted_url)
+                .header("x-api-key", api_key);
+
+            if let Some(place_id) = place_id {
+                request = request.header("Roblox-Place-Id", place_id.to_string());
+            }
+
+            let response = Self::validate_request_result(request.send().await).await?;
+            let location = Self::parse_to_raw::<CloudAssetLocation>(response).await?;
+
+            Ok(location)
         }
     }
 }
