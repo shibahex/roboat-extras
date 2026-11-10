@@ -17,6 +17,7 @@
 //!   - Fetch Collectible Product ID Bulk - [`Client::collectible_product_id_bulk`]
 //!   - Fetch Collectible Creator ID - [`Client::collectible_creator_id`]
 //!   - Purchase Non-Tradable Limited - [`Client::purchase_non_tradable_limited`]
+//!   - Fetch Asset Info - [`Client::get_asset_info`]
 //! * Catalog API
 //!   - Fetch Item Details - [`Client::item_details`]
 //!   - Fetch Product ID - [`Client::product_id`]  
@@ -69,8 +70,16 @@
 //!   - Unfriend - [`Client::unfriend`]
 //! * Assetdelivery API
 //!   - Fetch Asset Data - [`Client::fetch_asset_data`]
-//! * IDE API (Animations)
-//!   - Upload New Animation - [`Client::upload_new_animation`]
+//!   - Fetch Asset Metadata - [`Client::fetch_asset_metadata`]
+//!   - Fetch Asset Metadata Batch - [`Client::post_asset_metadata_batch`]
+//! * Open Cloud Assets API (*Api Key*)
+//!   - Upload Asset - [`Client::upload_asset`]
+//!   - Upload Animation - [`Client::upload_animation`]
+//!   - Poll Upload Operation - [`Client::poll_upload_operation`]
+//! * Open Cloud Asset Delivery API (*Api Key*)
+//!   - Fetch Cloud Asset Location - [`Client::fetch_cloud_asset_location`]
+//!   - Fetch Cloud Asset Data - [`Client::fetch_cloud_asset_data`]
+//! * Games API
 //!   - Get User Games - [`Client::user_games`]
 //!   - Get Group Games - [`Client::group_games`]
 //! * Client Settings
@@ -79,6 +88,28 @@
 //!   - Get User Channel - [`Client::user_channel`]
 //! * UNDER CONSTRUCTION
 //!   - Upload Classic Clothing To Group - [`Client::upload_classic_clothing_to_group`]
+//!
+//! # Authentication
+//!
+//! Most endpoints use a roblosecurity cookie, which is set with [`ClientBuilder::roblosecurity`].
+//!
+//! Open Cloud endpoints (marked with *Api Key* in [Coverage](#coverage)) use an api key instead, which is set with [`ClientBuilder::api_key`].
+//! Api keys can be made at <https://create.roblox.com/dashboard/credentials>. Unlike a roblosecurity, an api key only has the
+//! permissions (scopes) it was given, so check the documentation of each method for the scopes it needs. Endpoints that use an
+//! api key don't need an x-csrf-token.
+//!
+//! A client can have both a roblosecurity and an api key set.
+//!
+//! ```no_run
+//! // Replace these values with your own roblosecurity token and api key.
+//! const ROBLOSECURITY: &str = "your-roblosecurity-token";
+//! const API_KEY: &str = "your-api-key";
+//!
+//! let client = roboat::ClientBuilder::new()
+//!     .roblosecurity(ROBLOSECURITY.to_string())
+//!     .api_key(API_KEY.to_string())
+//!     .build();
+//! ```
 //!
 //! # Quick Start Examples
 //!
@@ -210,6 +241,55 @@
 //!     println!("Price: {}", price);
 //!
 //!     Ok(())   
+//! }
+//! ```
+//!
+//! ## Example 5 - Reupload an Animation
+//! This code snippet allows you to download an animation and upload it again under your account, using only an api key.
+//!
+//! The api key needs the `asset:read`, `asset:write` and `legacy-asset:manage` scopes. If you don't own the animation,
+//! pass a place id owned by the animation's creator instead of `None`.
+//!
+//! ```no_run
+//! use roboat::bedev2::AssetCreator;
+//!
+//! // Replace this value with your own api key.
+//! const API_KEY: &str = "your-api-key";
+//! // Replace this value with your own user id.
+//! const USER_ID: u64 = 1;
+//! // Replace this value with the id of the animation you want to reupload.
+//! const ANIMATION_ID: u64 = 507771019;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let client = roboat::ClientBuilder::new()
+//!         .api_key(API_KEY.to_string())
+//!         .build();
+//!
+//!     let animation_data = client.fetch_cloud_asset_data(ANIMATION_ID, None).await?;
+//!
+//!     let upload = client
+//!         .upload_animation(
+//!             AssetCreator::User(USER_ID),
+//!             "Reuploaded Animation".to_string(),
+//!             "Reuploaded with roboat.".to_string(),
+//!             &animation_data,
+//!         )
+//!         .await?;
+//!
+//!     loop {
+//!         let operation = client.poll_upload_operation(upload.path.clone()).await?;
+//!
+//!         if operation.done {
+//!             let new_animation_id = operation.response.and_then(|x| x.asset_id);
+//!             println!("New Animation ID: {:?}", new_animation_id);
+//!             break;
+//!         }
+//!
+//!         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+//!     }
+//!
+//!     Ok(())
 //! }
 //! ```
 

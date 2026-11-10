@@ -33,6 +33,7 @@ Documentation can be found [here](https://docs.rs/roboat/).
     - Fetch Collectible Product ID Bulk - [`Client::collectible_product_id_bulk`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.collectible_product_id_bulk)
     - Fetch Collectible Creator ID - [`Client::collectible_creator_id`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.collectible_creator_id)
     - Purchase Non-Tradable Limited - [`Client::purchase_non_tradable_limited`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.purchase_non_tradable_limited)
+    - Fetch Asset Info - [`Client::get_asset_info`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.get_asset_info)
 * Catalog API - [`catalog.roblox.com/*`]
     - Fetch Item Details - [`Client::item_details`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.item_details)
     - Fetch Product ID - [`Client::product_id`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.product_id)
@@ -55,6 +56,7 @@ Documentation can be found [here](https://docs.rs/roboat/).
     - Set Group Member Role - [`Client::set_group_member_role`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.set_group_member_role)
 * Presence API - [`presence.roblox.com/*`]
     - Register Presence - [`Client::register_presence`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.register_presence)
+    - Fetch Users Presence - [`Client::fetch_users_presence`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_users_presence)
 * Private Messages API - [`privatemessages.roblox.com/*`]
     - Fetch Messages - [`Client::messages`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.messages)
 * Thumbnails API - [`thumbnails.roblox.com/*`]
@@ -84,8 +86,15 @@ Documentation can be found [here](https://docs.rs/roboat/).
     - Unfriend - [`Client::unfriend`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.unfriend)
 * Assetdelivery API - [`assetdelivery.roblox.com/*`]
     - Fetch Asset Data - [`Client::fetch_asset_data`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_asset_data)
-* IDE API (Animations) - [`ide.roblox.com/*`]
-    - Upload New Animation - [`Client::upload_new_animation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_new_animation)
+    - Fetch Asset Metadata - [`Client::fetch_asset_metadata`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_asset_metadata)
+    - Fetch Asset Metadata Batch - [`Client::post_asset_metadata_batch`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.post_asset_metadata_batch)
+* Open Cloud Assets API (*Api Key*) - [`apis.roblox.com/assets/v1/*`]
+    - Upload Asset - [`Client::upload_asset`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_asset)
+    - Upload Animation - [`Client::upload_animation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_animation)
+    - Poll Upload Operation - [`Client::poll_upload_operation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.poll_upload_operation)
+* Open Cloud Asset Delivery API (*Api Key*) - [`apis.roblox.com/asset-delivery-api/v1/*`]
+    - Fetch Cloud Asset Location - [`Client::fetch_cloud_asset_location`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_cloud_asset_location)
+    - Fetch Cloud Asset Data - [`Client::fetch_cloud_asset_data`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_cloud_asset_data)
 * Games API - [`games.roblox.com/*`]
     - Get User Games - [`Client::user_games`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.user_games)
     - Get Group Games - [`Client::group_games`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.group_games)
@@ -102,6 +111,28 @@ You can add the latest version of roboat to your project by running:
 
 ```bash
 cargo add roboat
+```
+
+# Authentication
+
+Most endpoints use a roblosecurity cookie, which is set with `ClientBuilder::roblosecurity`.
+
+Open Cloud endpoints (marked with *Api Key* in [Coverage](#coverage)) use an api key instead, which is set with `ClientBuilder::api_key`.
+Api keys can be made at <https://create.roblox.com/dashboard/credentials>. Unlike a roblosecurity, an api key only has the
+permissions (scopes) it was given, so check the documentation of each method for the scopes it needs. Endpoints that use an
+api key don't need an x-csrf-token.
+
+A client can have both a roblosecurity and an api key set.
+
+```rust
+// Replace these values with your own roblosecurity token and api key.
+const ROBLOSECURITY: &str = "your-roblosecurity-token";
+const API_KEY: &str = "your-api-key";
+
+let client = roboat::ClientBuilder::new()
+    .roblosecurity(ROBLOSECURITY.to_string())
+    .api_key(API_KEY.to_string())
+    .build();
 ```
 
 # Quick Start Examples
@@ -233,6 +264,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Description: {}", description);
     println!("Creator Name: {}", creator_name);
     println!("Price: {}", price);
+
+    Ok(())
+}
+```
+
+## Example 5 - Reupload an Animation
+
+This code snippet allows you to download an animation and upload it again under your account, using only an api key.
+
+The api key needs the `asset:read`, `asset:write` and `legacy-asset:manage` scopes. If you don't own the animation,
+pass a place id owned by the animation's creator instead of `None`.
+
+```rust
+use roboat::bedev2::AssetCreator;
+
+// Replace this value with your own api key.
+const API_KEY: &str = "your-api-key";
+// Replace this value with your own user id.
+const USER_ID: u64 = 1;
+// Replace this value with the id of the animation you want to reupload.
+const ANIMATION_ID: u64 = 507771019;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = roboat::ClientBuilder::new()
+        .api_key(API_KEY.to_string())
+        .build();
+
+    let animation_data = client.fetch_cloud_asset_data(ANIMATION_ID, None).await?;
+
+    let upload = client
+        .upload_animation(
+            AssetCreator::User(USER_ID),
+            "Reuploaded Animation".to_string(),
+            "Reuploaded with roboat.".to_string(),
+            &animation_data,
+        )
+        .await?;
+
+    loop {
+        let operation = client.poll_upload_operation(upload.path.clone()).await?;
+
+        if operation.done {
+            let new_animation_id = operation.response.and_then(|x| x.asset_id);
+            println!("New Animation ID: {:?}", new_animation_id);
+            break;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 
     Ok(())
 }
