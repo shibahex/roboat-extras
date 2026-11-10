@@ -1,4 +1,5 @@
 use clap::Parser;
+use roboat::bedev2::AssetCreator;
 use roboat::ClientBuilder;
 
 /// This example is made for programs that would restore old roblox games
@@ -6,47 +7,43 @@ use roboat::ClientBuilder;
 /// This is because the animations isn't owned by you.
 /// Reuploading them will succesfully restore the animations under a new ID.
 ///
+/// Only an API key is needed. It needs the `asset:read`, `asset:write`
+/// and `legacy-asset:manage` scopes.
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(long)]
     api_key: String,
-    #[arg(long, short)]
-    roblosecurity: String,
+    /// The user id that owns the API key, the animation is uploaded under this user.
+    #[arg(long)]
+    user_id: u64,
     #[arg(long)]
     asset_id: u64,
+    /// Any place owned by the creator of the animation, needed if you don't own it.
+    #[arg(long)]
+    place_id: Option<u64>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let client = ClientBuilder::new()
-        .roblosecurity(args.roblosecurity)
-        .build();
+    let client = ClientBuilder::new().build();
 
-    let asset_id = args.asset_id;
-    let existing_animation = client.fetch_asset_data(asset_id).await?;
+    let existing_animation = client
+        .fetch_cloud_asset_data(args.api_key.clone(), args.asset_id, args.place_id)
+        .await?;
 
-    // let animation = NewAnimation {
-    //     group_id: None,
-    //     name: "roboatTest".to_string(),
-    //     description: "This is a roboat example".to_string(),
-    //     animation_data: existing_animation,
-    // };
-    //
-    // client.upload_new_animation(animation).await?;
     let response = client
         .upload_animation(
             args.api_key.clone(),
-            None,
-            "roboatTe".to_string(),
-            "example".to_string(),
+            AssetCreator::User(args.user_id),
+            "roboatTest".to_string(),
+            "This is a roboat example".to_string(),
             &existing_animation,
         )
         .await?;
 
     println!("Uploaded Animation!");
-    println!("Response: {:?}", response);
 
     loop {
         let operation = client
@@ -54,13 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
         if operation.done {
-            println!("{:#?}", operation);
-
             if let Some(resp) = operation.response {
-                println!("{:#?}", resp);
+                println!("New Asset ID: {:?}", resp.asset_id);
+            }
 
-                // Depending on how Roblox returns it
-                println!("New Asset ID: {:?}", resp);
+            if let Some(error) = operation.error {
+                println!("Upload failed: {}", error.message);
             }
 
             break;

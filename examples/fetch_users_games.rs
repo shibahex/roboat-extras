@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let client = ClientBuilder::new().build();
 
-    let games_response = client.user_games(args.user_id).await?;
+    let games_response = client.user_games(args.user_id, Some(true), None).await?;
     for game in games_response.data {
         println!("Game: {} (ID: {})", game.name, game.id);
         println!("  Root  ID: {}", game.root_place.id);
