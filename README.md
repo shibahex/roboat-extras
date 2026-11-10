@@ -92,6 +92,7 @@ Documentation can be found [here](https://docs.rs/roboat/).
     - Upload Asset - [`Client::upload_asset`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_asset)
     - Upload Animation - [`Client::upload_animation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.upload_animation)
     - Poll Upload Operation - [`Client::poll_upload_operation`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.poll_upload_operation)
+    - Update Asset Details - [`Client::update_asset_details`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.update_asset_details)
 * Open Cloud Asset Delivery API (*Api Key*) - [`apis.roblox.com/asset-delivery-api/v1/*`]
     - Fetch Cloud Asset Location - [`Client::fetch_cloud_asset_location`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_cloud_asset_location)
     - Fetch Cloud Asset Data - [`Client::fetch_cloud_asset_data`](https://docs.rs/roboat/latest/roboat/struct.Client.html#method.fetch_cloud_asset_data)

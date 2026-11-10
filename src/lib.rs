@@ -76,6 +76,7 @@
 //!   - Upload Asset - [`Client::upload_asset`]
 //!   - Upload Animation - [`Client::upload_animation`]
 //!   - Poll Upload Operation - [`Client::poll_upload_operation`]
+//!   - Update Asset Details - [`Client::update_asset_details`]
 //! * Open Cloud Asset Delivery API (*Api Key*)
 //!   - Fetch Cloud Asset Location - [`Client::fetch_cloud_asset_location`]
 //!   - Fetch Cloud Asset Data - [`Client::fetch_cloud_asset_data`]

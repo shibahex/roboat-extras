@@ -728,6 +728,61 @@ impl Client {
             .await
     }
 
+    /// Updates the name and/or description of an asset using the Open Cloud API endpoint
+    /// <https://apis.roblox.com/assets/v1/assets/{assetId}>.
+    ///
+    /// Only the fields that are `Some` get updated. The asset content isn't changed.
+    ///
+    /// # Notes
+    /// * Requires an api key set with [`crate::ClientBuilder::api_key`], with the `asset:read` and
+    ///   `asset:write` scopes. A roblosecurity is not needed.
+    /// * The update is not finished when this returns. Use [`Client::poll_upload_operation`]
+    ///   with the returned path to wait for it.
+    /// * Roblox doesn't reject names it doesn't allow, it replaces them with `#`. This can be
+    ///   used to rename an asset whose name got filtered.
+    ///
+    /// # Errors
+    /// * All errors under [Standard Errors](#standard-errors).
+    /// * All errors under [Api Key Required Errors](#api-key-required-errors).
+    /// * [`RoboatError::BadRequest`] - If both `display_name` and `description` are `None`.
+    /// * [`RoboatError::MalformedResponse`] - If the response from the server cannot be parsed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use roboat::catalog::AssetType;
+    /// use roboat::ClientBuilder;
+    ///
+    /// const API_KEY: &str = "your_api_key";
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::new().api_key(API_KEY.to_string()).build();
+    ///
+    /// let update = client
+    ///     .update_asset_details(
+    ///         123456789,
+    ///         AssetType::Animation,
+    ///         Some("New Name".to_string()),
+    ///         None,
+    ///     )
+    ///     .await?;
+    ///
+    /// println!("Update started: {}", update.path);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn update_asset_details(
+        &self,
+        asset_id: u64,
+        asset_type: AssetType,
+        display_name: Option<String>,
+        description: Option<String>,
+    ) -> Result<request_types::UploadAssetRaw, RoboatError> {
+        self.update_asset_details_internal(asset_id, asset_type, display_name, description)
+            .await
+    }
+
     /// Uploads classic clothing to a group. This currently only works for classic clothing and
     /// for people uploading from groups. This is because the endpoint is not fully understood yet
     /// and reverse engineering it is expensive.
@@ -974,6 +1029,50 @@ mod internal {
             let response_result = self
                 .reqwest_client
                 .post(OPEN_CLOUD_ASSET_API)
+                .header(API_KEY_HEADER, self.api_key()?)
+                .multipart(form)
+                .send()
+                .await;
+
+            let response = Self::validate_request_result(response_result)
+                .await
+                .map_err(Self::api_key_error)?;
+            let raw = Self::parse_to_raw::<request_types::UploadAssetRaw>(response).await?;
+            Ok(raw)
+        }
+
+        pub(super) async fn update_asset_details_internal(
+            &self,
+            asset_id: u64,
+            asset_type: catalog::AssetType,
+            display_name: Option<String>,
+            description: Option<String>,
+        ) -> Result<request_types::UploadAssetRaw, RoboatError> {
+            let mut update_mask = Vec::new();
+            let mut request_body = serde_json::json!({
+                "assetId": asset_id,
+                "assetType": asset_type.to_string(),
+            });
+
+            if let Some(display_name) = display_name {
+                update_mask.push("displayName");
+                request_body["displayName"] = serde_json::json!(display_name);
+            }
+            if let Some(description) = description {
+                update_mask.push("description");
+                request_body["description"] = serde_json::json!(description);
+            }
+            if update_mask.is_empty() {
+                return Err(RoboatError::BadRequest);
+            }
+
+            let form = reqwest::multipart::Form::new().text("request", request_body.to_string());
+            let formatted_url = format!("{}/{}", OPEN_CLOUD_ASSET_API, asset_id);
+
+            let response_result = self
+                .reqwest_client
+                .patch(formatted_url)
+                .query(&[("updateMask", update_mask.join(","))])
                 .header(API_KEY_HEADER, self.api_key()?)
                 .multipart(form)
                 .send()
