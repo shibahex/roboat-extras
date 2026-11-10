@@ -63,7 +63,7 @@ impl Client {
     /// println!("Found {} friends.", friends.len());
     ///
     /// for friend in friends {
-    ///     println!("{}: {}", friend.username, friend.user_id);
+    ///     println!("{}: {}", friend.name, friend.id);
     /// }
     ///
     /// # Ok(())
@@ -106,7 +106,7 @@ impl Client {
     /// let (friend_requests, next_cursor) = client.friend_requests(None).await?;
     ///
     /// for user in friend_requests {
-    ///     println!("{} from {}: {}", user.username, user.user_id);
+    ///     println!("{} ({})", user.name, user.id);
     /// }
     ///
     /// # Ok(())

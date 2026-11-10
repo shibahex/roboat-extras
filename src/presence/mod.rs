@@ -109,7 +109,7 @@ impl Client {
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = ClientBuilder::new().roblosecurity(ROBLOSECURITY.to_string()).build();
     /// let users = vec![1, 35958674918];
-    /// match client.fetch_user_presence(users).await {
+    /// match client.fetch_users_presence(users).await {
     ///    Ok(user_statuses) => println!("Successfully registered presence: {:?}", user_statuses),
     ///    Err(e) => println!("Error: {}", e),
     /// }

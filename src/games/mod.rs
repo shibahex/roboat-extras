@@ -79,7 +79,7 @@ impl Client {
     /// let client = ClientBuilder::new().build();
     ///
     /// let user_id = 3054007;
-    /// let games_response = client.user_games(user_id).await?;
+    /// let games_response = client.user_games(user_id, Some(true), None).await?;
     ///
     /// println!("Found {} games", games_response.data.len());
     ///
@@ -142,7 +142,7 @@ impl Client {
     /// let client = ClientBuilder::new().build();
     ///
     /// let group_id = 3190902;
-    /// let games_response = client.group_games(group_id).await?;
+    /// let games_response = client.group_games(group_id, Some(true), None).await?;
     ///
     /// println!("Found {} games for group", games_response.data.len());
     ///
